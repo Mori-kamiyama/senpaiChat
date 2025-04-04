@@ -22,9 +22,9 @@ const apiProxyPath = process.env.NEXT_PUBLIC_RAG_API_PROXY_PATH || '/api/generat
 // サンプル質問データ
 const sampleQuestions: SampleQuestion[] = [
     { id: 'q1', text: '人工知能について教えてください' },
-    { id: 'q2', text: '効率的な学習方法を教えてください' },
+    { id: 'q2', text: '寮生活で困ったときは誰に聞けばいい？' },
     { id: 'q3', text: '良い睡眠をとるコツは？' },
-    { id: 'q4', text: '読書の習慣を身につけるには？' },
+    { id: 'q4', text: '神山まるごと高専って？' },
 ];
 
 // モノクロームのメッセージバブル
