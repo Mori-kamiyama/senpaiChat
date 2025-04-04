@@ -131,26 +131,37 @@ const ChatInterface: React.FC = () => {
         messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
     };
 
-    const processSSEData = (chunk: string, assistantMessageId: string) => {
-        const lines = chunk.split('\n');
-        let currentData = '';
+    // チャットをリセットする関数
+    const resetChat = () => {
+        // 進行中のリクエストをキャンセル
+        abortControllerRef.current?.abort();
+        // 状態をリセット
+        setMessages([]);
+        setInput('');
+        setIsLoading(false);
+        setError(null);
+        setShowSampleQuestions(true);
+    };
 
-        lines.forEach(line => {
+    // 改良されたSSEデータ処理関数
+    const processSSEData = (chunk: string, assistantMessageId: string) => {
+        // 改行を保持しながらSSEデータを処理
+        let processedContent = '';
+
+        // 行ごとに処理
+        const lines = chunk.split('</chank>');
+
+        for (const line of lines) {
             if (line.startsWith('data:')) {
                 const dataPart = line.substring(5).trimStart();
-                try {
-                    if (dataPart === '[DONE]') {
-                        console.log("SSE: Received [DONE] marker.");
-                        return;
-                    }
-                    if (dataPart) {
-                        currentData += dataPart;
-                    }
-                } catch {
-                    console.warn("SSE data is not valid JSON or special marker:", dataPart);
-                    if (dataPart && dataPart !== '[DONE]') {
-                        currentData += dataPart;
-                    }
+
+                if (dataPart === '[DONE]') {
+                    console.log("SSE: Received [DONE] marker.");
+                    continue;
+                }
+
+                if (dataPart) {
+                    processedContent += dataPart;
                 }
             } else if (line.startsWith('event: error')) {
                 const errorData = lines.find(l => l.startsWith('data:'))?.substring(5).trim() ?? 'Unknown error';
@@ -166,13 +177,14 @@ const ChatInterface: React.FC = () => {
             } else if (line.startsWith('event: end')) {
                 console.log("SSE End Event received.");
             }
-        });
+        }
 
-        if (currentData) {
+        // 処理されたコンテンツが存在する場合、メッセージを更新
+        if (processedContent) {
             setMessages((prev) =>
                 prev.map((msg) =>
                     msg.id === assistantMessageId
-                        ? { ...msg, content: msg.content + currentData }
+                        ? { ...msg, content: msg.content + processedContent }
                         : msg
                 )
             );
@@ -231,7 +243,6 @@ const ChatInterface: React.FC = () => {
 
             const reader = response.body.getReader();
             const decoder = new TextDecoder();
-
             while (true) {
                 if (abortControllerRef.current?.signal.aborted) {
                     console.log("Stream reading aborted by signal.");
@@ -301,7 +312,10 @@ const ChatInterface: React.FC = () => {
                 <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8">
                     <div className="flex justify-between items-center py-4 md:justify-start md:space-x-10">
                         <div className="flex justify-start lg:w-0 lg:flex-1">
-                            <h1 className="text-2xl font-bold text-black flex items-center">
+                            <h1
+                                className="text-2xl font-bold text-black flex items-center cursor-pointer"
+                                onClick={resetChat}
+                            >
                                 <div className="p-1.5 bg-black rounded-lg shadow-lg shadow-black/10 mr-3">
                                     <Bot size={24} className="text-white"/>
                                 </div>
