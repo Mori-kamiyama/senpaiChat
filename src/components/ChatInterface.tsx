@@ -3,6 +3,7 @@
 
 import React, { useState, useRef, useEffect, useCallback, ChangeEvent, KeyboardEvent } from 'react';
 import { Send, Bot, User, AlertCircle, ChevronDown, Search } from 'lucide-react';
+import Image from "next/image";
 
 interface Message {
     id: string;
@@ -145,7 +146,7 @@ const ChatInterface: React.FC = () => {
                     if (dataPart) {
                         currentData += dataPart;
                     }
-                } catch (e) {
+                } catch {
                     console.warn("SSE data is not valid JSON or special marker:", dataPart);
                     if (dataPart && dataPart !== '[DONE]') {
                         currentData += dataPart;
@@ -213,7 +214,7 @@ const ChatInterface: React.FC = () => {
                 try {
                     const errorJson = await response.json();
                     errorBody = errorJson.error || errorJson.message || JSON.stringify(errorJson);
-                } catch (e) {
+                } catch {
                     try {
                         const errorText = await response.text();
                         if (errorText) errorBody = errorText;
@@ -307,7 +308,7 @@ const ChatInterface: React.FC = () => {
                                 SenpaiChat
                             </h1>
                         </div>
-                        <img src="https://kamiyama.ac.jp/img/common/logo.svg" className="w-25 h-auto" alt="Kamiyama Logo" />
+                        <Image src="https://kamiyama.ac.jp/img/common/logo.svg" alt="高専ロゴ" width={90} height={50} />
                     </div>
                 </div>
             </header>
