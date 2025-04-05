@@ -143,25 +143,39 @@ const ChatInterface: React.FC = () => {
         setShowSampleQuestions(true);
     };
 
-    // 改良されたSSEデータ処理関数 (連結された data: 行対応版)
-    // 改良されたSSEデータ処理関数 (連結 data: & 末尾 </chank> 無視対応版)
+    // 改良されたSSEデータ処理関数 (連結 data:, 末尾 </chank> 無視, ## 以降無視対応版)
     const processSSEData = (chunk: string, assistantMessageId: string) => {
         let processedContent = ''; // このチャンクから抽出されたコンテンツ
-        let streamEnded = false; // ストリーム終了マーカーを検出したか
+        let streamEnded = false; // ストリーム終了マーカー [DONE] or <end> を検出したか
+        let ignoreMarkerFoundInChunk = false; // このチャンク内で ## マーカーが見つかったか
 
         // 正規表現: data: の後から次の data:, <end>, または終端までを抽出
         const regex = /data:\s*([\s\S]*?)(?=data:|<end>|$)/g;
         let match;
 
         while ((match = regex.exec(chunk)) !== null) {
-            // match[1] がキャプチャされたグループ (data: の後の内容)
-            let extractedPart = match[1]; // まず抽出した部分を取得
+            // このチャンクで既に ## が見つかっていたら、後続の data: は処理しない
+            if (ignoreMarkerFoundInChunk) {
+                break; // while ループを抜ける
+            }
 
-            // 末尾の "</chank>" を除去 (空白がある可能性も考慮してtrimEndしてからチェック)
+            let extractedPart = match[1]; // data: の後の内容
+
+            // 末尾の "</chank>" を除去
             if (extractedPart.trimEnd().endsWith('</chank>')) {
-                // </chank> の長さは 8 文字
-                // trimEnd() 後の文字列長から 8 を引いた位置までの部分文字列を取得
                 extractedPart = extractedPart.substring(0, extractedPart.lastIndexOf('</chank>'));
+            }
+
+            // ## マーカーをチェック
+            const ignoreMarkerIndex = extractedPart.indexOf('##');
+            if (ignoreMarkerIndex !== -1) {
+                // ## が見つかった場合、それより前の部分だけを取得
+                extractedPart = extractedPart.substring(0, ignoreMarkerIndex);
+                // このチャンクの残りの data: を無視するフラグを立てる
+                ignoreMarkerFoundInChunk = true;
+                console.log("SSE: Found '##' marker. Ignoring subsequent data in this chunk.");
+                // ## が見つかった場合、このセグメントがそのチャンクの最後の有効データとなる
+                break; // ループ終了
             }
 
             // 抽出・加工したデータの前後の空白を除去
@@ -171,26 +185,26 @@ const ChatInterface: React.FC = () => {
             if (dataPart === '[DONE]') {
                 console.log("SSE: Received [DONE] marker.");
                 streamEnded = true;
-                continue; // [DONE]自体は表示しない
+                break; // ループ終了
             }
-            // <end> マーカーをチェック (データとして来る場合)
-            // 注意: <end> の前に </chank> が付く場合 (例: data: <end></chank>) も考慮される
+            // <end> マーカーをチェック
             if (dataPart === '<end>') {
                 console.log("SSE: Received <end> marker.");
                 streamEnded = true;
-                continue; // <end>自体は表示しない
+                break; // ループ終了
             }
 
             // データ部分が空文字列でない場合のみ追加
-            // これにより、"data:data:" や "data:</chank>" のようなパターンから生じる空の dataPart を除外
             if (dataPart) {
                 processedContent += dataPart;
             }
+
+            // ignoreMarkerFoundInChunkがtrueになった場合、次のループの開始時に break する
         }
 
-        // <end> が独立して存在する場合のチェック
-        if (chunk.includes('<end>') && !streamEnded) {
-            // チャンクの最後が <end> (や <end></chank> など) で終わるかチェック
+        // <end> が独立して存在する場合のチェック (正規表現で data: の一部としてマッチしなかった場合)
+        // かつ、まだストリーム終了と判定されておらず、##も見つかっていない場合
+        if (!streamEnded && !ignoreMarkerFoundInChunk && chunk.includes('<end>')) {
             const trimmedChunkEnd = chunk.trimEnd();
             if (trimmedChunkEnd.endsWith('<end>') || trimmedChunkEnd.endsWith('<end></chank>')) {
                 console.log("SSE: Detected <end> marker at the end of the chunk.");
@@ -198,20 +212,15 @@ const ChatInterface: React.FC = () => {
             }
         }
 
-        // event: error など他の形式が混在する場合の注意
-        if (chunk.includes('event: error')) {
+        // event: error の処理
+        // ## が見つかる前にエラーイベントが来た場合のみ考慮する（あるいは要件に応じて変更）
+        if (chunk.includes('event: error') && !ignoreMarkerFoundInChunk) {
             console.warn("Chunk contains 'event: error'. Parsing might be incomplete if mixed with concatenated 'data:'.");
             // 必要に応じてエラー処理を追加
-            // const errorMatch = chunk.match(/event: error\s*data:\s*([\s\S]*)/);
-            // if (errorMatch && errorMatch[1]) {
-            //    let errorMsg = errorMatch[1].trim();
-            //    if (errorMsg.endsWith('</chank>')) {
-            //        errorMsg = errorMsg.substring(0, errorMsg.lastIndexOf('</chank>')).trimEnd();
-            //    }
-            //    handleError(errorMsg, assistantMessageId);
-            // }
+            // 例: エラーメッセージを抽出し、handleErrorを呼び出す
         }
 
+        // 処理されたコンテンツ（## より前の部分を含む）が存在する場合、メッセージを更新
         if (processedContent) {
             setMessages((prev) =>
                 prev.map((msg) =>
@@ -222,11 +231,21 @@ const ChatInterface: React.FC = () => {
             );
         }
 
+        // ストリーム終了処理
         if (streamEnded) {
-            console.log("SSE stream processing finished based on marker.");
+            console.log("SSE stream processing finished based on marker ([DONE] or <end>).");
+            // 必要ならローディング解除などの処理
             // setIsLoading(false);
+        } else if (ignoreMarkerFoundInChunk) {
+            console.log("SSE stream processing for subsequent chunks might be affected or halted if '##' indicates full stop.");
+            // ## がストリーム全体の終了を意味する場合、ここでローディング解除や接続切断の処理を行う
+            // 例: setIsLoading(false);
+            // 例: closeSSEConnection();
         }
     };
+
+// エラーハンドリング関数 (必要に応じて定義)
+// const handleError = (errorData: string, assistantMessageId: string) => { ... };
 
 
     const handleSubmit = useCallback(async (query: string) => {
