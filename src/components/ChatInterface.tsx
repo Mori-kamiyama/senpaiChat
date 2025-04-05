@@ -18,6 +18,10 @@ const apiProxyPath = 'http://chat.toromino.net8080/generate';
 // --- sampleQuestions と QuestionTag は削除 ---
 
 // モノクロームのメッセージバブル
+// components/ChatInterface.tsx
+// ... (他のimportやコードはそのまま)
+
+// モノクロームのメッセージバブル
 const MessageBubble: React.FC<{ role: 'user' | 'assistant', content: string }> = ({ role, content }) => {
     const isUser = role === 'user';
     return (
@@ -40,25 +44,32 @@ const MessageBubble: React.FC<{ role: 'user' | 'assistant', content: string }> =
                     style={{
                         whiteSpace: 'pre-wrap', // 改行を保持
                         wordBreak: 'break-word', // 長い単語を折り返す
+                        // オプション: 最小高さを確保したい場合
+                        // minHeight: '3.25rem', // 例: padding + 1行分の高さ程度
                     }}
                 >
                     {/* ローディング中の場合のみ LoadingIndicator を表示 */}
                     {role === 'assistant' && content === '' && <LoadingIndicator />}
+
                     {/* コンテンツがある場合は表示 */}
                     {content && (
                         <div className={`font-medium ${isUser ? 'text-white/90' : 'text-gray-900'} leading-relaxed`}>
                             {content}
                         </div>
                     )}
-                    {/* コンテンツがなく、ユーザーメッセージでもない場合（初期の空アシスタントメッセージなど）は何も表示しないか、必要ならプレースホルダー */}
+
+                    {/* === 以下の条件分岐を削除 === */}
+                    {/*
                     {!content && role !== 'user' && !(<LoadingIndicator />) && (
                         <div className="opacity-0">.</div> // 高さを保つためのダミー（または空にする）
                     )}
+                    */}
                 </div>
             </div>
         </div>
     );
 };
+
 
 // モノクロームのローディングインジケーター
 const LoadingIndicator: React.FC = () => (
