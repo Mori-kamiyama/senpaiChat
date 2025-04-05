@@ -17,7 +17,7 @@ interface SampleQuestion {
     text: string;
 }
 
-const apiProxyPath = process.env.RAG_API_URL;
+const apiProxyPath = process.env.RAG_API_URL || '/generate';
 
 // サンプル質問データ
 const sampleQuestions: SampleQuestion[] = [
