@@ -197,7 +197,7 @@ const ChatInterface: React.FC = () => {
                 // ## が見つかった場合、このセグメントがそのチャンクの最後の有効データとなる
                 break; // ループ終了
             }
-const ignoreMarkerIndex4 = extractedPart.indexOf('.');
+            const ignoreMarkerIndex4 = extractedPart.indexOf('.');
             if (ignoreMarkerIndex4 !== -1) {
                 // # が見つかった場合、それより前の部分だけを取得
                 extractedPart = extractedPart.substring(0, ignoreMarkerIndex4);
@@ -207,10 +207,10 @@ const ignoreMarkerIndex4 = extractedPart.indexOf('.');
                 // ## が見つかった場合、このセグメントがそのチャンクの最後の有効データとなる
                 break; // ループ終了
             }
-const ignoreMarkerIndex4 = extractedPart.indexOf('-');
-            if (ignoreMarkerIndex4 !== -1) {
+            const ignoreMarkerIndex5 = extractedPart.indexOf('-');
+            if (ignoreMarkerIndex5 !== -1) {
                 // # が見つかった場合、それより前の部分だけを取得
-                extractedPart = extractedPart.substring(0, ignoreMarkerIndex4);
+                extractedPart = extractedPart.substring(0, ignoreMarkerIndex5);
                 // このチャンクの残りの data: を無視するフラグを立てる
                 ignoreMarkerFoundInChunk = true;
                 console.log("SSE: Found '#' marker. Ignoring subsequent data in this chunk.");
