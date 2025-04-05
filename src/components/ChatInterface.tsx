@@ -148,76 +148,48 @@ const ChatInterface: React.FC = () => {
         let processedContent = ''; // このチャンクから抽出されたコンテンツ
         let streamEnded = false; // ストリーム終了マーカーを検出したか
 
-        // 正規表現で "data:" の後から次の "data:" または文字列終端までの内容を抽出
-        // data:     : "data:" リテラルにマッチ
-        // \s*      : 0個以上の空白文字にマッチ (data: の後のスペースに対応)
-        // (.*?)    : 任意の内容を非貪欲マッチでキャプチャ (これが抽出したいデータ)
-        // (?=      : 肯定先読み開始 (マッチに含めずに次のパターンを確認)
-        //   data:  : 次の "data:"
-        //   |      : または
-        //   <end>  : "<end>" マーカー (もしデータ区切りとしても使われる場合)
-        //   |      : または
-        //   $      : 文字列の終端
-        // )        : 肯定先読み終了
-        // g        : グローバル検索 (チャンク内のすべてのマッチを探す)
-        // s        : ドット (.) が改行文字 (\n) にもマッチするようにする (複数行にまたがる data を考慮)
-        const regex = /data:\s*(.*?)(?=data:|<end>|$)/gs;
+        // 正規表現: data: の後から次の data:, <end>, または終端までを抽出
+        // [\s\S]*? で改行を含む任意の文字を非貪欲マッチ (sフラグの代替)
+        const regex = /data:\s*([\s\S]*?)(?=data:|<end>|$)/g; // sフラグなし、[\s\S]を使用
         let match;
 
         while ((match = regex.exec(chunk)) !== null) {
-            // match[1] がキャプチャされたグループ (data: の後の内容)
-            // 前後の空白を除去して、空でないかを確認
             const dataPart = match[1].trim();
 
-            // 終了マーカー [DONE] をチェック
             if (dataPart === '[DONE]') {
                 console.log("SSE: Received [DONE] marker.");
                 streamEnded = true;
-                continue; // [DONE]自体は表示しない
+                continue;
             }
-            // <end> マーカーをチェック (単独データとして来る場合)
             if (dataPart === '<end>') {
                 console.log("SSE: Received <end> marker.");
                 streamEnded = true;
-                continue; // <end>自体は表示しない
+                continue;
             }
 
-            // データ部分が空文字列でない場合のみ追加
-            // これにより、"data:data:" のような連続によって生じる空の dataPart を除外
             if (dataPart) {
                 processedContent += dataPart;
             }
         }
 
-        // <end> が data: のプレフィックスなしで単独で来る場合も考慮
-        // (ただし、上の正規表現の肯定先読みで既に考慮されている可能性が高い)
+        // <end> が独立して存在する場合のチェック (上記の正規表現でも部分的にカバーされる)
         if (chunk.includes('<end>') && !streamEnded) {
-            // <end> がチャンクのどこかに含まれていて、まだ streamEnded になっていない場合
-            // より厳密には、<end> が独立したマーカーとして機能するか確認が必要
-            // 例: chunk の最後がちょうど <end> で終わるなど
             if (chunk.trim().endsWith('<end>')) {
                 console.log("SSE: Detected <end> marker at the end of the chunk.");
                 streamEnded = true;
             }
         }
 
-        // 注意: この方法は "event: error" のような他のSSEフィールドが
-        //       `data:` と同じチャンク内に混在する場合、正しく処理できない可能性があります。
-        //       もし `event:` 行などが混在する場合は、より複雑なパーサーが必要です。
-        //       (例: まず改行で分割し、各行を判定するなど)
-        //       提示されたデータ例に基づき、`data:` の連続に焦点を当てています。
+        // event: error など他の形式が混在する場合の注意
         if (chunk.includes('event: error')) {
             console.warn("Chunk contains 'event: error'. Parsing might be incomplete if mixed with concatenated 'data:'.");
-            // ここでエラー処理ロジックを呼び出すか、エラー発生を示す必要があるかもしれません。
-            // 例えば、エラーメッセージを抽出する別のロジックを試みるなど。
-            // const errorMatch = chunk.match(/event: error\s*data:\s*(.*)/s);
+            // 必要に応じてエラー処理を追加
+            // const errorMatch = chunk.match(/event: error\s*data:\s*([\s\S]*)/);
             // if (errorMatch && errorMatch[1]) {
             //     handleError(errorMatch[1].trim(), assistantMessageId);
             // }
         }
 
-
-        // 処理されたコンテンツが存在する場合、メッセージを更新
         if (processedContent) {
             setMessages((prev) =>
                 prev.map((msg) =>
@@ -228,12 +200,14 @@ const ChatInterface: React.FC = () => {
             );
         }
 
-        // ストリーム終了マーカーを検出した場合の追加処理
         if (streamEnded) {
             console.log("SSE stream processing finished based on marker.");
-            // 例: setIsLoading(false); // ローディング状態などを解除
+            // setIsLoading(false);
         }
     };
+
+// エラーハンドリング関数 (必要に応じて定義)
+// const handleError = (errorData: string, assistantMessageId: string) => { ... };
 
 // エラーハンドリング関数 (必要に応じて定義)
 // const handleError = (errorData: string, assistantMessageId: string) => { ... };
