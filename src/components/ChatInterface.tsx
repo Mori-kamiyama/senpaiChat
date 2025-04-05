@@ -144,37 +144,55 @@ const ChatInterface: React.FC = () => {
     };
 
     // 改良されたSSEデータ処理関数 (連結された data: 行対応版)
+    // 改良されたSSEデータ処理関数 (連結 data: & 末尾 </chank> 無視対応版)
     const processSSEData = (chunk: string, assistantMessageId: string) => {
         let processedContent = ''; // このチャンクから抽出されたコンテンツ
         let streamEnded = false; // ストリーム終了マーカーを検出したか
 
         // 正規表現: data: の後から次の data:, <end>, または終端までを抽出
-        // [\s\S]*? で改行を含む任意の文字を非貪欲マッチ (sフラグの代替)
-        const regex = /data:\s*([\s\S]*?)(?=data:|<end>|$)/g; // sフラグなし、[\s\S]を使用
+        const regex = /data:\s*([\s\S]*?)(?=data:|<end>|$)/g;
         let match;
 
         while ((match = regex.exec(chunk)) !== null) {
-            const dataPart = match[1].trim();
+            // match[1] がキャプチャされたグループ (data: の後の内容)
+            let extractedPart = match[1]; // まず抽出した部分を取得
 
+            // 末尾の "</chank>" を除去 (空白がある可能性も考慮してtrimEndしてからチェック)
+            if (extractedPart.trimEnd().endsWith('</chank>')) {
+                // </chank> の長さは 8 文字
+                // trimEnd() 後の文字列長から 8 を引いた位置までの部分文字列を取得
+                extractedPart = extractedPart.substring(0, extractedPart.lastIndexOf('</chank>'));
+            }
+
+            // 抽出・加工したデータの前後の空白を除去
+            const dataPart = extractedPart.trim();
+
+            // 終了マーカー [DONE] をチェック
             if (dataPart === '[DONE]') {
                 console.log("SSE: Received [DONE] marker.");
                 streamEnded = true;
-                continue;
+                continue; // [DONE]自体は表示しない
             }
+            // <end> マーカーをチェック (データとして来る場合)
+            // 注意: <end> の前に </chank> が付く場合 (例: data: <end></chank>) も考慮される
             if (dataPart === '<end>') {
                 console.log("SSE: Received <end> marker.");
                 streamEnded = true;
-                continue;
+                continue; // <end>自体は表示しない
             }
 
+            // データ部分が空文字列でない場合のみ追加
+            // これにより、"data:data:" や "data:</chank>" のようなパターンから生じる空の dataPart を除外
             if (dataPart) {
                 processedContent += dataPart;
             }
         }
 
-        // <end> が独立して存在する場合のチェック (上記の正規表現でも部分的にカバーされる)
+        // <end> が独立して存在する場合のチェック
         if (chunk.includes('<end>') && !streamEnded) {
-            if (chunk.trim().endsWith('<end>')) {
+            // チャンクの最後が <end> (や <end></chank> など) で終わるかチェック
+            const trimmedChunkEnd = chunk.trimEnd();
+            if (trimmedChunkEnd.endsWith('<end>') || trimmedChunkEnd.endsWith('<end></chank>')) {
                 console.log("SSE: Detected <end> marker at the end of the chunk.");
                 streamEnded = true;
             }
@@ -186,7 +204,11 @@ const ChatInterface: React.FC = () => {
             // 必要に応じてエラー処理を追加
             // const errorMatch = chunk.match(/event: error\s*data:\s*([\s\S]*)/);
             // if (errorMatch && errorMatch[1]) {
-            //     handleError(errorMatch[1].trim(), assistantMessageId);
+            //    let errorMsg = errorMatch[1].trim();
+            //    if (errorMsg.endsWith('</chank>')) {
+            //        errorMsg = errorMsg.substring(0, errorMsg.lastIndexOf('</chank>')).trimEnd();
+            //    }
+            //    handleError(errorMsg, assistantMessageId);
             // }
         }
 
@@ -206,11 +228,6 @@ const ChatInterface: React.FC = () => {
         }
     };
 
-// エラーハンドリング関数 (必要に応じて定義)
-// const handleError = (errorData: string, assistantMessageId: string) => { ... };
-
-// エラーハンドリング関数 (必要に応じて定義)
-// const handleError = (errorData: string, assistantMessageId: string) => { ... };
 
     const handleSubmit = useCallback(async (query: string) => {
         if (!query.trim() || isLoading) return;
