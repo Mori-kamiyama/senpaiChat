@@ -217,6 +217,26 @@ const ChatInterface: React.FC = () => {
                 // ## が見つかった場合、このセグメントがそのチャンクの最後の有効データとなる
                 break; // ループ終了
             }
+　　　　　　　const ignoreMarkerIndex6 = extractedPart.indexOf('まとめ');
+            if (ignoreMarkerIndex6 !== -1) {
+                // # が見つかった場合、それより前の部分だけを取得
+                extractedPart = extractedPart.substring(0, ignoreMarkerIndex6);
+                // このチャンクの残りの data: を無視するフラグを立てる
+                ignoreMarkerFoundInChunk = true;
+                console.log("SSE: Found '#' marker. Ignoring subsequent data in this chunk.");
+                // ## が見つかった場合、このセグメントがそのチャンクの最後の有効データとなる
+                break; // ループ終了
+            }
+　　　　　　　const ignoreMarkerIndex7 = extractedPart.indexOf('おわり');
+            if (ignoreMarkerIndex7 !== -1) {
+                // # が見つかった場合、それより前の部分だけを取得
+                extractedPart = extractedPart.substring(0, ignoreMarkerIndex7);
+                // このチャンクの残りの data: を無視するフラグを立てる
+                ignoreMarkerFoundInChunk = true;
+                console.log("SSE: Found '#' marker. Ignoring subsequent data in this chunk.");
+                // ## が見つかった場合、このセグメントがそのチャンクの最後の有効データとなる
+                break; // ループ終了
+            }
 
             // 抽出・加工したデータの前後の空白を除去
             const dataPart = extractedPart.trim();
