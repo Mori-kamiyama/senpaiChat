@@ -2,7 +2,7 @@
 import { type NextRequest } from 'next/server';
 
 // API Route はサーバーサイドで実行されるため、ここで実際のAPI URLを使用
-const ragApiUrl = "process.env.RAG_API_URL";
+const ragApiUrl = process.env.RAG_API_URL;
 
 export async function POST(request: NextRequest) {
     // API URLが設定されていない場合のエラーハンドリング
