@@ -17,13 +17,13 @@ interface SampleQuestion {
     text: string;
 }
 
-const apiProxyPath = process.env.RAG_API_URL || '/generate';
+const apiProxyPath = process.env.RAG_API_URL || '/api/generate';
 
 // サンプル質問データ
 const sampleQuestions: SampleQuestion[] = [
     { id: 'q1', text: '人工知能について教えてください' },
     { id: 'q2', text: '寮生活で困ったときは誰に聞けばいい？' },
-    { id: 'q3', text: '良い睡眠をとるコツは？' },
+    { id: 'q3', text: 'SPって何がある？' },
     { id: 'q4', text: '神山まるごと高専って？' },
 ];
 
