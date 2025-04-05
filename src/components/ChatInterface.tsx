@@ -144,93 +144,101 @@ const ChatInterface: React.FC = () => {
     };
 
     // 改良されたSSEデータ処理関数
+    // 改良されたSSEデータ処理関数 (</chank> 区切り対応版)
     const processSSEData = (chunk: string, assistantMessageId: string) => {
-        // SSEデータチャンクを行ごとに分割して処理
-        // サーバーからのデータ形式に合わせて、必要なら \r\n も考慮する
-        const lines = chunk.split('\n');
+        // </chank> を区切り文字としてチャンクを分割
+        // chunk の末尾が </chank> で終わっていない場合、最後の要素は不完全なデータの可能性がある
+        const segments = chunk.split('</chank>');
         let processedContent = ''; // このチャンクから抽出されたコンテンツを一時的に保持
+        let streamEnded = false; // ストリーム終了マーカー (<end>) を検出したか
 
-        for (const line of lines) {
-            // data: で始まる行を処理
-            if (line.startsWith('data:')) {
-                // "data:" プレフィックスを除去
-                // trimStart() で "data:" の直後の空白も除去
-                const dataPart = line.substring(5).trimStart();
+        for (const segment of segments) {
+            // セグメントの前後の空白を除去
+            const trimmedSegment = segment.trim();
 
-                // 終了マーカー [DONE] をチェック
+            // <end> マーカーをチェック (単独のセグメントの場合)
+            if (trimmedSegment === '<end>') {
+                console.log("SSE: Received <end> marker segment.");
+                streamEnded = true;
+                break; // <end> が来たらこのチャンクの残りは処理しない
+            }
+
+            // data: で始まるかチェック
+            if (trimmedSegment.startsWith('data:')) {
+                // "data:" プレフィックスを除去し、さらに先頭の空白も除去
+                const dataPart = trimmedSegment.substring(5).trimStart();
+
+                // [DONE] マーカーもチェック (サーバーが両方使う可能性は低いが一応)
                 if (dataPart === '[DONE]') {
-                    console.log("SSE: Received [DONE] marker.");
-                    // [DONE] 自体は表示コンテンツではないので、この行の処理はここで終了
-                    continue;
+                    console.log("SSE: Received [DONE] marker via data:.");
+                    streamEnded = true;
+                    continue; // [DONE]自体は表示しない
+                }
+                // <end> が data: の後に来る場合 (例: data: <end>)
+                if (dataPart === '<end>') {
+                    console.log("SSE: Received <end> marker via data:.");
+                    streamEnded = true;
+                    continue; // <end>自体は表示しない
                 }
 
                 // データ部分が空でない場合のみ追加
+                // これにより "data: " や、"data: </chank>" が分割されて生じる空の dataPart を除外
                 if (dataPart) {
-                    // 抽出したデータ（テキストフラグメント）を連結
-                    // 注: SSEの仕様では、1メッセージ内の複数data行は改行で連結されるべきですが、
-                    //     LLMなどのストリーミングAPIは、意図したテキストの断片を
-                    //     連続した data: イベントとして送ることが多いです。
-                    //     サーバーがデータ内に '\n' を含めて送信しない限り、ここでは改行を追加しません。
-                    //     もしサーバーがJSON形式 (例: data: {"token": "text"}) で送る場合は、
-                    //     ここでJSONパースと必要なフィールドの抽出が必要です。
-                    //     例: try {
-                    //            const parsed = JSON.parse(dataPart);
-                    //            processedContent += parsed.text || parsed.token || '';
-                    //         } catch(e) {
-                    //             // JSONでない場合はそのまま追加（フォールバック）
-                    //             processedContent += dataPart;
-                    //         }
                     processedContent += dataPart;
                 }
-            } else if (line.startsWith('event: error')) {
-                // エラーイベントの処理
-                // 次の data: 行にエラーメッセージが含まれると仮定（サーバーの実装による）
-                // このチャンク内で 'event: error' の後にある最初の 'data:' 行を探す
-                const errorLineIndex = lines.indexOf(line);
-                let errorData = 'Unknown error'; // デフォルトエラーメッセージ
-                // エラーイベント行の次以降の行を検索
-                for (let i = errorLineIndex + 1; i < lines.length; i++) {
-                    if (lines[i].startsWith('data:')) {
-                        errorData = lines[i].substring(5).trimStart();
+            } else if (trimmedSegment.startsWith('event: error')) {
+                // エラーイベントの処理 (形式が不明なため、動作確認が必要)
+                console.warn("Received 'event: error'. Error data extraction might need adjustment for '</chank>' format.");
+                // エラーデータを次の `data:` セグメントから取得しようと試みる（暫定）
+                const errorLineIndex = segments.indexOf(segment); // このチャンク内でのインデックス
+                let errorData = 'Unknown error';
+                for (let i = errorLineIndex + 1; i < segments.length; i++) {
+                    const nextSegmentTrimmed = segments[i].trim();
+                    if (nextSegmentTrimmed.startsWith('data:')) {
+                        errorData = nextSegmentTrimmed.substring(5).trimStart();
                         // エラーデータがJSONの場合の処理（必要に応じて）
                         // try {
                         //     const parsedError = JSON.parse(errorData);
                         //     errorData = parsedError.message || JSON.stringify(parsedError);
                         // } catch (e) { /* ignore if not JSON */ }
-                        break; // 最初の data: 行を見つけたら抜ける
+                        break;
                     }
                 }
-
                 console.error('SSE Error Event Data:', errorData);
-                setError(`Error from SenpaiChat: ${errorData}`); // エラー状態をセット
+                setError(`Error from SenpaiChat: ${errorData}`);
                 setMessages((prev) =>
                     prev.map((msg) =>
                         msg.id === assistantMessageId
-                            ? { ...msg, content: msg.content + `\n\n[エラー: ${errorData}]` } // メッセージにエラー情報を追記
+                            ? { ...msg, content: msg.content + `\n\n[エラー: ${errorData}]` }
                             : msg
                     )
                 );
-                // エラー発生後、このチャンクの残りの処理を続けるか中断するかは要件次第
+                // エラー発生後、このチャンクの残りの処理を中断するかどうか
                 // break; // 中断する場合
-
-            } else if (line.startsWith('event: end')) {
-                // 終了イベント（[DONE]マーカーが使われる場合、これは情報的なことが多い）
+            } else if (trimmedSegment.startsWith('event: end')) {
+                // event: end が使われる場合
                 console.log("SSE End Event received.");
+                // これが実質的な終了を示すなら streamEnded = true; としても良いかも
             }
-            // 他の行（例: 'event: message', 'id: 123', コメント行 ':', 空行など）は、
-            // コンテンツ表示の観点からは基本的に無視します。
+            // 他の形式の行や、分割によって生じた空のセグメント (`split`で最後が空になる等) は無視
         }
 
-        // 処理されたコンテンツ（このチャンクから抽出されたテキスト）が存在する場合、
-        // 対応するメッセージの状態を更新
+        // 処理されたコンテンツが存在する場合、メッセージを更新
         if (processedContent) {
             setMessages((prev) =>
                 prev.map((msg) =>
                     msg.id === assistantMessageId
-                        ? { ...msg, content: msg.content + processedContent } // 既存のコンテントに追記
+                        ? { ...msg, content: msg.content + processedContent }
                         : msg
                 )
             );
+        }
+
+        // ストリーム終了マーカーを検出した場合の追加処理（例：ローディング解除など）
+        if (streamEnded) {
+            console.log("SSE stream processing finished based on marker.");
+            // ここでストリーミングが完了したことを示す状態を更新するなどの処理を追加できます
+            // 例: setIsLoading(false);
         }
     };
 
