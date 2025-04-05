@@ -2,7 +2,7 @@
 'use client';
 
 import React, { useState, useRef, useEffect, useCallback, ChangeEvent, KeyboardEvent } from 'react';
-import { Send, Bot, User, AlertCircle, ChevronDown } from 'lucide-react'; // Search を削除
+import { Send, Bot, User, AlertCircle, ChevronDown, Search } from 'lucide-react';
 import Image from "next/image";
 
 interface Message {
@@ -12,14 +12,20 @@ interface Message {
     timestamp?: Date;
 }
 
-// 環境変数は NEXT_PUBLIC_ プレフィックスが必要な場合があります
-const apiProxyPath = 'http://chat.toromino.net8080/generate';
+interface SampleQuestion {
+    id: string;
+    text: string;
+}
 
-// --- sampleQuestions と QuestionTag は削除 ---
+const apiProxyPath = process.env.NEXT_PUBLIC_RAG_API_PROXY_PATH || '/api/generate';
 
-// モノクロームのメッセージバブル
-// components/ChatInterface.tsx
-// ... (他のimportやコードはそのまま)
+// サンプル質問データ
+const sampleQuestions: SampleQuestion[] = [
+    { id: 'q1', text: '人工知能について教えてください' },
+    { id: 'q2', text: '寮生活で困ったときは誰に聞けばいい？' },
+    { id: 'q3', text: '良い睡眠をとるコツは？' },
+    { id: 'q4', text: '神山まるごと高専って？' },
+];
 
 // モノクロームのメッセージバブル
 const MessageBubble: React.FC<{ role: 'user' | 'assistant', content: string }> = ({ role, content }) => {
@@ -42,34 +48,18 @@ const MessageBubble: React.FC<{ role: 'user' | 'assistant', content: string }> =
                             : 'bg-white text-gray-800 border-0 shadow-lg shadow-gray-200/50'
                     }`}
                     style={{
-                        whiteSpace: 'pre-wrap', // 改行を保持
-                        wordBreak: 'break-word', // 長い単語を折り返す
-                        // オプション: 最小高さを確保したい場合
-                        // minHeight: '3.25rem', // 例: padding + 1行分の高さ程度
+                        whiteSpace: 'pre-wrap',
+                        wordBreak: 'break-word',
                     }}
                 >
-                    {/* ローディング中の場合のみ LoadingIndicator を表示 */}
-                    {role === 'assistant' && content === '' && <LoadingIndicator />}
-
-                    {/* コンテンツがある場合は表示 */}
-                    {content && (
-                        <div className={`font-medium ${isUser ? 'text-white/90' : 'text-gray-900'} leading-relaxed`}>
-                            {content}
-                        </div>
-                    )}
-
-                    {/* === 以下の条件分岐を削除 === */}
-                    {/*
-                    {!content && role !== 'user' && !(<LoadingIndicator />) && (
-                        <div className="opacity-0">.</div> // 高さを保つためのダミー（または空にする）
-                    )}
-                    */}
+                    <div className={`font-medium ${isUser ? 'text-white/90' : 'text-gray-900'} leading-relaxed`}>
+                        {content}
+                    </div>
                 </div>
             </div>
         </div>
     );
 };
-
 
 // モノクロームのローディングインジケーター
 const LoadingIndicator: React.FC = () => (
@@ -80,7 +70,16 @@ const LoadingIndicator: React.FC = () => (
     </div>
 );
 
-// --- QuestionTag は削除 ---
+// サンプル質問タグ
+const QuestionTag: React.FC<{ question: SampleQuestion, onClick: () => void }> = ({ question, onClick }) => (
+    <button
+        onClick={onClick}
+        className="px-4 py-2 bg-white border border-gray-200 rounded-full text-sm text-gray-700 hover:bg-gray-50 hover:border-gray-300 transition-colors duration-200 shadow-sm flex items-center gap-2 whitespace-nowrap"
+    >
+        <Search size={14} />
+        {question.text}
+    </button>
+);
 
 const ChatInterface: React.FC = () => {
     const [messages, setMessages] = useState<Message[]>([]);
@@ -91,7 +90,7 @@ const ChatInterface: React.FC = () => {
     const abortControllerRef = useRef<AbortController | null>(null);
     const inputRef = useRef<HTMLInputElement>(null);
     const [showScrollButton, setShowScrollButton] = useState(false);
-    // --- showSampleQuestions ステートは削除 ---
+    const [showSampleQuestions, setShowSampleQuestions] = useState(true);
 
     useEffect(() => {
         messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -99,10 +98,12 @@ const ChatInterface: React.FC = () => {
 
     useEffect(() => {
         const handleScroll = () => {
-            const container = messagesEndRef.current?.parentElement;
-            if (container) {
-                const isScrolledUp = container.scrollTop + container.clientHeight < container.scrollHeight - 100;
-                setShowScrollButton(isScrolledUp);
+            if (messagesEndRef.current) {
+                const container = messagesEndRef.current.parentElement;
+                if (container) {
+                    const isScrolledUp = container.scrollTop + container.clientHeight < container.scrollHeight - 100;
+                    setShowScrollButton(isScrolledUp);
+                }
             }
         };
 
@@ -119,19 +120,118 @@ const ChatInterface: React.FC = () => {
         };
     }, []);
 
-    // --- メッセージ数によるサンプル質問表示制御の useEffect は削除 ---
+    // 最初のメッセージが送信されたら、サンプル質問を非表示にする
+    useEffect(() => {
+        if (messages.length > 0) {
+            setShowSampleQuestions(false);
+        }
+    }, [messages]);
 
     const scrollToBottom = () => {
         messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
     };
 
+    // チャットをリセットする関数
     const resetChat = () => {
+        // 進行中のリクエストをキャンセル
         abortControllerRef.current?.abort();
+        // 状態をリセット
         setMessages([]);
         setInput('');
         setIsLoading(false);
         setError(null);
-        // --- setShowSampleQuestions(true) は削除 ---
+        setShowSampleQuestions(true);
+    };
+
+    // 改良されたSSEデータ処理関数
+    const processSSEData = (chunk: string, assistantMessageId: string) => {
+        // SSEデータチャンクを行ごとに分割して処理
+        // サーバーからのデータ形式に合わせて、必要なら \r\n も考慮する
+        const lines = chunk.split('\n');
+        let processedContent = ''; // このチャンクから抽出されたコンテンツを一時的に保持
+
+        for (const line of lines) {
+            // data: で始まる行を処理
+            if (line.startsWith('data:')) {
+                // "data:" プレフィックスを除去
+                // trimStart() で "data:" の直後の空白も除去
+                const dataPart = line.substring(5).trimStart();
+
+                // 終了マーカー [DONE] をチェック
+                if (dataPart === '[DONE]') {
+                    console.log("SSE: Received [DONE] marker.");
+                    // [DONE] 自体は表示コンテンツではないので、この行の処理はここで終了
+                    continue;
+                }
+
+                // データ部分が空でない場合のみ追加
+                if (dataPart) {
+                    // 抽出したデータ（テキストフラグメント）を連結
+                    // 注: SSEの仕様では、1メッセージ内の複数data行は改行で連結されるべきですが、
+                    //     LLMなどのストリーミングAPIは、意図したテキストの断片を
+                    //     連続した data: イベントとして送ることが多いです。
+                    //     サーバーがデータ内に '\n' を含めて送信しない限り、ここでは改行を追加しません。
+                    //     もしサーバーがJSON形式 (例: data: {"token": "text"}) で送る場合は、
+                    //     ここでJSONパースと必要なフィールドの抽出が必要です。
+                    //     例: try {
+                    //            const parsed = JSON.parse(dataPart);
+                    //            processedContent += parsed.text || parsed.token || '';
+                    //         } catch(e) {
+                    //             // JSONでない場合はそのまま追加（フォールバック）
+                    //             processedContent += dataPart;
+                    //         }
+                    processedContent += dataPart;
+                }
+            } else if (line.startsWith('event: error')) {
+                // エラーイベントの処理
+                // 次の data: 行にエラーメッセージが含まれると仮定（サーバーの実装による）
+                // このチャンク内で 'event: error' の後にある最初の 'data:' 行を探す
+                const errorLineIndex = lines.indexOf(line);
+                let errorData = 'Unknown error'; // デフォルトエラーメッセージ
+                // エラーイベント行の次以降の行を検索
+                for (let i = errorLineIndex + 1; i < lines.length; i++) {
+                    if (lines[i].startsWith('data:')) {
+                        errorData = lines[i].substring(5).trimStart();
+                        // エラーデータがJSONの場合の処理（必要に応じて）
+                        // try {
+                        //     const parsedError = JSON.parse(errorData);
+                        //     errorData = parsedError.message || JSON.stringify(parsedError);
+                        // } catch (e) { /* ignore if not JSON */ }
+                        break; // 最初の data: 行を見つけたら抜ける
+                    }
+                }
+
+                console.error('SSE Error Event Data:', errorData);
+                setError(`Error from SenpaiChat: ${errorData}`); // エラー状態をセット
+                setMessages((prev) =>
+                    prev.map((msg) =>
+                        msg.id === assistantMessageId
+                            ? { ...msg, content: msg.content + `\n\n[エラー: ${errorData}]` } // メッセージにエラー情報を追記
+                            : msg
+                    )
+                );
+                // エラー発生後、このチャンクの残りの処理を続けるか中断するかは要件次第
+                // break; // 中断する場合
+
+            } else if (line.startsWith('event: end')) {
+                // 終了イベント（[DONE]マーカーが使われる場合、これは情報的なことが多い）
+                console.log("SSE End Event received.");
+            }
+            // 他の行（例: 'event: message', 'id: 123', コメント行 ':', 空行など）は、
+            // コンテンツ表示の観点からは基本的に無視します。
+        }
+
+        // 処理されたコンテンツ（このチャンクから抽出されたテキスト）が存在する場合、
+        // 対応するメッセージの状態を更新
+        if (processedContent) {
+            setMessages((prev) =>
+                prev.map((msg) =>
+                    msg.id === assistantMessageId
+                        ? { ...msg, content: msg.content + processedContent } // 既存のコンテントに追記
+                        : msg
+                )
+            );
+        }
     };
 
     const handleSubmit = useCallback(async (query: string) => {
@@ -149,14 +249,11 @@ const ChatInterface: React.FC = () => {
             timestamp: new Date()
         };
         const assistantMessageId = `assistant-${Date.now()}`;
-        const newAssistantMessage: Message = {
-            id: assistantMessageId,
-            role: 'assistant',
-            content: '', // Initially empty, loading handled in MessageBubble
-            timestamp: new Date()
-        };
-
-        setMessages((prev) => [...prev, userMessage, newAssistantMessage]);
+        setMessages((prev) => [
+            ...prev,
+            userMessage,
+            { id: assistantMessageId, role: 'assistant', content: '', timestamp: new Date() }
+        ]);
         setInput('');
 
         try {
@@ -180,10 +277,6 @@ const ChatInterface: React.FC = () => {
                         console.error("Failed to read error response text:", textErr);
                     }
                 }
-                // エラー時もアシスタントメッセージが存在すればそこにエラー内容を追記
-                setMessages(prev => prev.map(msg =>
-                    msg.id === assistantMessageId ? { ...msg, content: `[エラーが発生しました: ${errorBody}]` } : msg
-                ));
                 throw new Error(errorBody);
             }
 
@@ -193,9 +286,6 @@ const ChatInterface: React.FC = () => {
 
             const reader = response.body.getReader();
             const decoder = new TextDecoder();
-            let buffer = '';
-            let receivedDone = false;
-
             while (true) {
                 if (abortControllerRef.current?.signal.aborted) {
                     console.log("Stream reading aborted by signal.");
@@ -207,68 +297,13 @@ const ChatInterface: React.FC = () => {
 
                 if (done) {
                     console.log("Stream finished.");
-                    if (!receivedDone && messages.some(msg => msg.id === assistantMessageId)) {
-                        console.warn("Stream finished without [DONE] marker, but assistant message exists.");
-                    }
+                    setIsLoading(false);
+                    abortControllerRef.current = null;
                     break;
                 }
 
-                buffer += decoder.decode(value, { stream: true });
-
-                let boundary = buffer.indexOf('\n');
-                while (boundary !== -1) {
-                    const line = buffer.substring(0, boundary).trim();
-                    buffer = buffer.substring(boundary + 1);
-
-                    if (line.startsWith('data:')) {
-                        const dataPart = line.substring(5).trimStart();
-
-                        if (dataPart === '[DONE]') {
-                            console.log("SSE: Received [DONE] marker.");
-                            receivedDone = true;
-                            continue;
-                        }
-
-                        if (dataPart) {
-                            setMessages((prev) =>
-                                prev.map((msg) =>
-                                    msg.id === assistantMessageId
-                                        ? { ...msg, content: msg.content + dataPart }
-                                        : msg
-                                )
-                            );
-                        }
-                    } else if (line.startsWith('event: error')) {
-                        const errorDataLine = buffer.split('\n').find(l => l.startsWith('data:'));
-                        const errorData = errorDataLine?.substring(5).trim() ?? 'Unknown error reported by stream';
-                        console.error('SSE Error Event:', errorData);
-                        const formattedError = `\n\n[エラー: ${errorData}]`;
-                        setError(`Stream Error: ${errorData}`);
-                        setMessages((prev) =>
-                            prev.map((msg) =>
-                                msg.id === assistantMessageId
-                                    ? { ...msg, content: msg.content + formattedError }
-                                    : msg
-                            )
-                        );
-                        reader.cancel();
-                        if (abortControllerRef.current) {
-                            abortControllerRef.current.abort();
-                        }
-                        setIsLoading(false);
-                        return;
-
-                    } else if (line.startsWith('event: end')) {
-                        console.log("SSE End Event received.");
-                    }
-
-                    boundary = buffer.indexOf('\n');
-                }
-                if (abortControllerRef.current?.signal.aborted) {
-                    console.log("Stream reading aborted by signal (inside inner while).");
-                    setMessages(prev => prev.filter(msg => msg.id !== assistantMessageId));
-                    break;
-                }
+                const chunk = decoder.decode(value, { stream: true });
+                processSSEData(chunk, assistantMessageId);
             }
 
         } catch (err) {
@@ -277,22 +312,20 @@ const ChatInterface: React.FC = () => {
                 setError(null);
             } else {
                 console.error('Chat fetch/stream error:', err);
-                const errorMessage = err instanceof Error ? err.message : '不明なエラーが発生しました';
-                setError(errorMessage); // グローバルエラー状態を設定
-                // handleSubmitの冒頭でエラー時にアシスタントメッセージに追記する処理を入れたので、ここではグローバルエラー設定のみでも良いかも
-                // 必要ならここでも setMessages で追記する
-                // setMessages(prev => prev.map(msg =>
-                //     msg.id === assistantMessageId
-                //         ? { ...msg, content: (msg.content ? msg.content + '\n\n' : '') + `[エラーが発生しました: ${errorMessage}]` }
-                //         : msg
-                // ));
+                const errorMessage = err instanceof Error ? err.message : String(err);
+                setError(errorMessage);
+                setMessages(prev => prev.map(msg =>
+                    msg.id === assistantMessageId ? { ...msg, content: `[エラーが発生しました: ${errorMessage}]` } : msg
+                ));
             }
         } finally {
             setIsLoading(false);
-            abortControllerRef.current = null;
+            if (abortControllerRef.current && !abortControllerRef.current.signal.aborted) {
+                abortControllerRef.current = null;
+            }
             inputRef.current?.focus();
         }
-    }, [isLoading, apiProxyPath]); // 依存配列から showSampleQuestions などを削除
+    }, [isLoading]);
 
     const handleFormSubmit = (e: React.FormEvent) => {
         e.preventDefault();
@@ -310,41 +343,44 @@ const ChatInterface: React.FC = () => {
         }
     };
 
-    // --- handleSampleQuestionClick は削除 ---
+    const handleSampleQuestionClick = (question: SampleQuestion) => {
+        setInput(question.text);
+        inputRef.current?.focus();
+    };
 
     return (
         <div className="flex flex-col h-screen bg-gray-50">
-            {/* Header */}
+            {/* モノクロームヘッダー */}
             <header className="bg-white shadow-sm sticky top-0 z-10 border-b border-gray-200">
                 <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8">
                     <div className="flex justify-between items-center py-4 md:justify-start md:space-x-10">
                         <div className="flex justify-start lg:w-0 lg:flex-1">
-                            <div className="flex items-center cursor-pointer" onClick={resetChat} title="チャットをリセット">
+                            <h1
+                                className="text-2xl font-bold text-black flex items-center cursor-pointer"
+                                onClick={resetChat}
+                            >
                                 <div className="p-1.5 bg-black rounded-lg shadow-lg shadow-black/10 mr-3">
                                     <Bot size={24} className="text-white"/>
                                 </div>
-                                <h1 className="text-2xl font-bold text-black">
-                                    SenpaiChat
-                                </h1>
-                            </div>
+                                SenpaiChat
+                            </h1>
                         </div>
-                        <Image src="https://kamiyama.ac.jp/img/common/logo.svg" alt="高専ロゴ" width={90} height={50} priority />
+                        <Image src="https://kamiyama.ac.jp/img/common/logo.svg" alt="高専ロゴ" width={90} height={50} />
                     </div>
                 </div>
             </header>
 
-            {/* Messages Area */}
+            {/* メインコンテンツエリア */}
             <div className="flex-1 flex flex-col items-center w-full overflow-hidden relative">
-                <div className="flex-1 overflow-y-auto w-full max-w-4xl px-4 lg:px-0 pt-8 pb-40 scroll-smooth"> {/* 下部のpaddingを増やす */}
-                    {messages.length === 0 && !isLoading && (
+                <div className="flex-1 overflow-y-auto w-full max-w-4xl px-4 lg:px-0 pt-8 pb-32 scroll-smooth">
+                    {messages.length === 0 && (
                         <div className="flex items-center justify-center h-full">
                             <div className="text-center p-8 max-w-lg rounded-2xl bg-white shadow-xl border border-gray-100">
                                 <div className="mx-auto w-16 h-16 mb-4 bg-black rounded-full flex items-center justify-center shadow-lg shadow-black/10">
                                     <Bot size={32} className="text-white" />
                                 </div>
                                 <h2 className="text-2xl font-semibold text-gray-800 mb-3">SenpaiChatへようこそ</h2>
-                                <p className="text-gray-600 mb-6">質問や会話を始めましょう。AI先輩があなたをサポートします。</p>
-                                {/* --- 初期画面のサンプル質問表示は削除 --- */}
+                                <p className="text-gray-600 mb-4">質問や会話を始めましょう。AI先輩があなたをサポートします。</p>
                             </div>
                         </div>
                     )}
@@ -353,9 +389,21 @@ const ChatInterface: React.FC = () => {
                         <MessageBubble key={msg.id} role={msg.role} content={msg.content} />
                     ))}
 
-                    {/* グローバルエラー表示 (オプション) */}
+                    {isLoading && messages[messages.length - 1]?.role === 'assistant' && messages[messages.length - 1]?.content === '' && (
+                        <div className="flex justify-start mb-5">
+                            <div className="flex items-start gap-3 max-w-[80%]">
+                                <div className="flex-shrink-0 w-9 h-9 rounded-full flex items-center justify-center shadow-md bg-gray-800">
+                                    <Bot size={18} className="text-white/90" />
+                                </div>
+                                <div className="px-5 py-4 rounded-2xl shadow-lg bg-white text-gray-800">
+                                    <LoadingIndicator />
+                                </div>
+                            </div>
+                        </div>
+                    )}
+
                     {error && !isLoading && (
-                        <div className="mt-4 p-4 text-sm text-red-700 bg-red-50 rounded-xl border border-red-200 flex items-center gap-3 shadow-md max-w-4xl mx-auto px-4 lg:px-0" role="alert">
+                        <div className="mt-4 p-5 text-sm text-red-700 bg-red-50 rounded-xl border border-red-200 flex items-center gap-3 shadow-md" role="alert">
                             <AlertCircle size={20} className="flex-shrink-0 text-red-500" />
                             <div>
                                 <span className="font-medium">エラー:</span> {error}
@@ -366,11 +414,11 @@ const ChatInterface: React.FC = () => {
                     <div ref={messagesEndRef} />
                 </div>
 
-                {/* Scroll to bottom button */}
+                {/* スクロールボタン */}
                 {showScrollButton && (
                     <button
                         onClick={scrollToBottom}
-                        className="absolute bottom-40 right-6 md:right-8 p-3 rounded-full bg-white shadow-lg border border-gray-100 text-gray-600 hover:text-black transition-all duration-200 hover:shadow-xl"
+                        className="absolute bottom-32 right-6 md:right-8 p-3 rounded-full bg-white shadow-lg border border-gray-100 text-gray-600 hover:text-black transition-all duration-200 hover:shadow-xl"
                         aria-label="最下部にスクロール"
                     >
                         <ChevronDown size={20} />
@@ -378,14 +426,25 @@ const ChatInterface: React.FC = () => {
                 )}
             </div>
 
-            {/* Input Area */}
-            <div className="fixed bottom-0 left-0 right-0 bg-gradient-to-t from-gray-100 via-gray-50 to-transparent pb-6 pt-12 pointer-events-none">
+            {/* 入力エリア */}
+            <div className="fixed bottom-0 left-0 right-0 bg-gradient-to-t from-gray-50 to-transparent pb-6 pt-12 pointer-events-none">
                 <div className="max-w-4xl mx-auto px-4 pointer-events-auto">
-                    {/* --- 入力エリア上部のサンプル質問表示は削除 --- */}
+                    {/* サンプル質問タグ */}
+                    {showSampleQuestions && (
+                        <div className="mb-4 flex flex-wrap gap-2 justify-center">
+                            {sampleQuestions.map(question => (
+                                <QuestionTag
+                                    key={question.id}
+                                    question={question}
+                                    onClick={() => handleSampleQuestionClick(question)}
+                                />
+                            ))}
+                        </div>
+                    )}
 
                     <form
                         onSubmit={handleFormSubmit}
-                        className="relative flex items-center bg-white rounded-2xl shadow-xl border border-gray-200 overflow-hidden transition-all duration-300 focus-within:shadow-lg focus-within:border-gray-300 mt-3" // サンプル削除に伴いマージン調整
+                        className="relative flex items-center bg-white rounded-2xl shadow-xl border border-gray-200 overflow-hidden transition-all duration-300 focus-within:shadow-lg focus-within:border-gray-300"
                     >
                         <input
                             ref={inputRef}
@@ -394,16 +453,16 @@ const ChatInterface: React.FC = () => {
                             onChange={handleInputChange}
                             onKeyDown={handleKeyDown}
                             placeholder="SenpaiChatに質問を入力... (Enterで送信)"
-                            className="flex-1 py-4 px-6 border-none focus:outline-none focus:ring-0 text-gray-800 placeholder-gray-500 bg-transparent text-base"
+                            className="flex-1 py-4 px-6 border-none focus:outline-none focus:ring-0 text-gray-700 placeholder-gray-400 bg-transparent"
                             disabled={isLoading}
                             required
                         />
                         <button
                             type="submit"
-                            className={`mr-2 my-1.5 flex-shrink-0 p-3 rounded-lg text-white transition-all duration-300 ease-in-out ${
+                            className={`mr-3 flex-shrink-0 p-3 rounded-xl text-white transition-all duration-300 ease-in-out ${
                                 isLoading || !input.trim()
-                                    ? 'bg-gray-400 cursor-not-allowed'
-                                    : 'bg-black hover:bg-gray-800 focus:outline-none focus:ring-2 focus:ring-gray-500 focus:ring-offset-2 shadow-md hover:shadow-lg'
+                                    ? 'bg-gray-300 cursor-not-allowed opacity-60'
+                                    : 'bg-black hover:bg-gray-900 hover:shadow-md focus:outline-none focus:ring-2 focus:ring-gray-500 focus:ring-offset-2'
                             }`}
                             disabled={isLoading || !input.trim()}
                             aria-label="送信"
@@ -411,7 +470,6 @@ const ChatInterface: React.FC = () => {
                             <Send size={20} />
                         </button>
                     </form>
-                    <p className="text-xs text-center text-gray-400 mt-2">SenpaiChatはAIによって生成された回答を提供します。内容の正確性を保証するものではありません。</p>
                 </div>
             </div>
         </div>
