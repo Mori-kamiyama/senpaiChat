@@ -17,7 +17,7 @@ interface SampleQuestion {
     text: string;
 }
 
-const apiProxyPath = process.env.NEXT_PUBLIC_RAG_API_URL || '/api/generate'; // 環境変数は NEXT_PUBLIC_ プレフィックスが必要
+const apiProxyPath = "http://chat.toromino.net:8080/generate"; // 環境変数は NEXT_PUBLIC_ プレフィックスが必要
 
 // サンプル質問データ
 const sampleQuestions: SampleQuestion[] = [
