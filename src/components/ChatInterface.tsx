@@ -455,6 +455,7 @@ const ChatInterface: React.FC = () => {
                                 </div>
                                 <h2 className="text-2xl font-semibold text-gray-800 mb-3">SenpaiChatへようこそ</h2>
                                 <p className="text-gray-600 mb-4">質問や会話を始めましょう。AI先輩があなたをサポートします。</p>
+                                <p className="text-red-600">SenpaiChatはサービス終了しました。長らくのご愛用ありがとうございました。</p>
                             </div>
                         </div>
                     )}
